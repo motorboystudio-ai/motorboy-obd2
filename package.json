@@ -1,0 +1,17 @@
+{
+  "name": "ecu-obd2",
+  "version": "0.1.0",
+  "description": "Web-based OBD-II diagnostic tool: live data, DTCs and freeze frames from ECU via ELM327 (BLE/USB Serial) or a built-in car simulator. Zero dependencies.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node test/protocol.test.mjs && node test/honda.test.mjs",
+    "build:android": "gradle assembleDebug",
+    "test:android": "gradle testDebugUnitTest"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

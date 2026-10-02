@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ECU OBD2 — Motorcycle ECU Tool</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔧</text></svg>" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">⬡ ECU <span>OBD2</span> <small class="brand-sub">🏍️ BIKE ECU</small></div>
+    <div class="topbar-status">
+      <span id="conn-dot" class="dot off"></span>
+      <span id="conn-text" class="conn-text">Disconnected</span>
+      <span id="proto-badge" class="badge hidden"></span>
+      <span id="engine-badge" class="badge hidden"></span>
+      <span id="mil-lamp" class="mil hidden">⚠ CHECK ENGINE</span>
+      <span id="vin" class="vin" title="Vehicle Identification Number"></span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Connection -->
+    <section class="card">
+      <h2>Connection</h2>
+      <div class="controls-row">
+        <label>Device
+          <select id="device">
+            <option value="bluetooth">ELM327 — Bluetooth (BLE)</option>
+            <option value="serial">ELM327 — USB Serial</option>
+            <option value="sim">Simulator (demo, no hardware)</option>
+          </select>
+        </label>
+        <label>Protocol
+          <select id="protocol">
+            <option value="auto">Auto detect</option>
+            <option value="CAN413">CAN 413 (many Asian/Chinese cars)</option>
+            <option value="CAN250">CAN 250 (many European/American cars)</option>
+            <option value="ISO9141">ISO 9141 (KWP)</option>
+            <option value="VPW">J1850 VPW (GM)</option>
+            <option value="PWM">J1850 PWM (Ford/Chrysler)</option>
+          </select>
+        </label>
+        <label id="baud-label" class="hidden">Baud rate
+          <select id="baud">
+            <option value="9600" selected>9600 (default)</option>
+            <option value="38400">38400</option>
+            <option value="115200">115200</option>
+          </select>
+        </label>
+        <label>Poll interval
+          <select id="interval">
+            <option value="150">150 ms (fast)</option>
+            <option value="250" selected>250 ms</option>
+            <option value="500">500 ms</option>
+            <option value="1000">1000 ms</option>
+          </select>
+        </label>
+        <label>Units
+          <select id="units">
+            <option value="metric" selected>Metric (km/h, °C)</option>
+            <option value="imperial">Imperial (mph, °F)</option>
+          </select>
+        </label>
+        <button id="connect-btn" class="btn primary">Connect</button>
+      </div>
+      <p class="hint">
+        Bluetooth ใช้ <b>BLE</b> (Web Bluetooth) ผ่าน HTTPS — Chrome/Edge เท่านั้น
+        · Adapter <b>Classic / SPP</b> ต้องต่อสาย USB
+        · เปิดไฟเครื่องรถก่อน Connect (auto-detect protocol อัตโนมัติ)
+      </p>
+    </section>
+
+    <!-- ================= BIKE ECU — Honda K-line (from eculib) ================= -->
+    <section class="card" id="bike-card">
+      <div class="card-head">
+        <h2>🏍️ Bike ECU — Honda K-line (eculib)</h2>
+        <div class="card-actions">
+          <span id="bike-state" class="badge hidden"></span>
+          <button id="bike-connect" class="btn primary small">Connect</button>
+        </div>
+      </div>
+      <div class="controls-row">
+        <label>Device
+          <select id="bike-device">
+            <option value="sim">Simulator (demo, no hardware)</option>
+            <option value="serial">FTDI / K-line dongle — Serial 10400</option>
+          </select>
+        </label>
+        <button id="bike-ping" class="btn small" disabled>Ping (FE 72)</button>
+        <button id="bike-state-btn" class="btn small" disabled>Detect state</button>
+        <button id="bike-faults" class="btn small" disabled>Read faults (73/74)</button>
+        <button id="bike-tables" class="btn small" disabled>Probe tables (71)</button>
+      </div>
+
+      <div class="controls-row hidden" id="bike-sim-panel">
+        <label class="switch">
+          <input type="checkbox" id="bike-sim-ignition" checked />
+          <span>Ignition</span>
+        </label>
+        <label>Inject fault
+          <select id="bike-sim-fault">
+            <option value="19-01">19-01 — CKP sensor no signal</option>
+            <option value="18-01">18-01 — CMP sensor no signal</option>
+            <option value="21-01">21-01 — O2 sensor malfunction</option>
+            <option value="01-01">01-01 — MAP circuit low voltage</option>
+            <option value="12-01">12-01 — No.1 primary injector</option>
+            <option value="54-01">54-01 — Bank angle sensor low</option>
+          </select>
+        </label>
+        <button id="bike-sim-inject" class="btn small">Inject (current)</button>
+        <button id="bike-sim-clear" class="btn small ghost">Clear all faults</button>
+      </div>
+
+      <div class="bike-panels">
+        <div>
+          <h3 class="panel-title">Current faults <span class="mono dim">74</span></h3>
+          <ul id="bike-current" class="dtc-list"><li class="dtc-empty">Not read yet</li></ul>
+        </div>
+        <div>
+          <h3 class="panel-title">Past faults <span class="mono dim">73</span></h3>
+          <ul id="bike-past" class="dtc-list"><li class="dtc-empty">Not read yet</li></ul>
+        </div>
+      </div>
+
+      <div id="bike-tables-panel" class="hidden">
+        <h3 class="panel-title">Info tables <span class="mono dim">71</span></h3>
+        <div id="bike-tables" class="tables-grid"></div>
+      </div>
+
+      <div class="rom-zone">
+        <h3 class="panel-title">ROM read/write <span class="mono dim">7e 01 06 / 0b</span></h3>
+        <div class="controls-row">
+          <label>ROM size
+            <select id="rom-size">
+              <option value="16384">16 KB</option>
+              <option value="65536">64 KB</option>
+              <option value="131072" selected>128 KB</option>
+              <option value="262144">256 KB</option>
+            </select>
+          </label>
+          <button id="rom-read" class="btn small" disabled>Read ROM → .bin</button>
+          <label class="btn small ghost" for="rom-file">Load .bin…</label>
+          <input type="file" id="rom-file" accept=".bin,.rom,.romz,.binz" class="hidden" />
+          <button id="rom-write" class="btn small danger" disabled>Write ROM + verify</button>
+        </div>
+        <div id="rom-progress" class="progress hidden">
+          <div id="rom-progress-bar"></div>
+          <span id="rom-progress-text"></span>
+        </div>
+        <div id="rom-info" class="rom-info hidden mono"></div>
+        <p class="hint">
+          Read = ดึง ROM ออกมาเก็บเป็นไฟล์ · Write = เขียนไฟล์เข้า ECU (auto init-write + readback verify)
+          · 10400 baud: 128 KB ≈ ใช้เวลาหลายนาที <b>อย่าถอดสายระหว่างเขียน</b>
+        </p>
+      </div>
+
+      <div class="danger-zone">
+        <h3 class="danger-title">⚠ Flash / recovery — can BRICK the ECU</h3>
+        <div class="controls-row">
+          <button id="bike-init-recover" class="btn small danger" disabled>Init recovery (7b)</button>
+          <button id="bike-init-write" class="btn small danger" disabled>Init write (7d)</button>
+          <button id="bike-erase" class="btn small danger" disabled>Erase + wait (7e)</button>
+          <button id="bike-post-write" class="btn small danger" disabled>Post-write (7e)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Simulator controls -->
+    <section class="card hidden" id="sim-panel">
+      <h2>Simulator controls</h2>
+      <div class="controls-row">
+        <label class="switch">
+          <input type="checkbox" id="sim-ignition" />
+          <span>Engine ignition</span>
+        </label>
+        <label class="slider-label">
+          Throttle
+          <input type="range" id="sim-throttle" min="0" max="100" value="0" />
+          <span id="sim-throttle-val" class="mono">0%</span>
+        </label>
+        <label>Test DTC
+          <select id="sim-dtc"></select>
+        </label>
+        <button id="sim-inject" class="btn">Inject DTC</button>
+        <button id="sim-clear" class="btn ghost">Clear via OBD (04)</button>
+      </div>
+    </section>
+
+    <!-- Gauges -->
+    <section class="gauge-grid hidden" id="gauge-grid">
+      <div class="gauge card"><div class="gauge-box" id="gauge-rpm"></div></div>
+      <div class="gauge card"><div class="gauge-box" id="gauge-speed"></div></div>
+      <div class="gauge card"><div class="gauge-box" id="gauge-coolant"></div></div>
+      <div class="gauge card"><div class="gauge-box" id="gauge-fuel"></div></div>
+    </section>
+
+    <!-- Secondary tiles -->
+    <section class="tile-grid hidden" id="tile-grid">
+      <div class="tile"><span class="tile-label">THROTTLE</span><span class="tile-value" id="tile-throttle">—</span></div>
+      <div class="tile"><span class="tile-label">INTAKE AIR TEMP</span><span class="tile-value" id="tile-airtemp">—</span></div>
+      <div class="tile"><span class="tile-label">MAF</span><span class="tile-value" id="tile-maf">—</span></div>
+      <div class="tile"><span class="tile-label">SYSTEM VOLTAGE</span><span class="tile-value" id="tile-voltage">—</span></div>
+      <div class="tile"><span class="tile-label">MANIFOLD PRESSURE</span><span class="tile-value" id="tile-map">—</span></div>
+      <div class="tile"><span class="tile-label">O2 SENSOR 1</span><span class="tile-value" id="tile-o2">—</span></div>
+      <div class="tile"><span class="tile-label">FUEL TRIM (ST B1)</span><span class="tile-value" id="tile-trimst">—</span></div>
+      <div class="tile"><span class="tile-label">FUEL TRIM (LT B1)</span><span class="tile-value" id="tile-trimlt">—</span></div>
+    </section>
+
+    <div class="bottom-grid">
+      <!-- DTCs -->
+      <section class="card">
+        <div class="card-head">
+          <h2>Diagnostic Trouble Codes</h2>
+          <div class="card-actions">
+            <button id="dtc-read" class="btn small">Read (03)</button>
+            <button id="dtc-clear" class="btn small danger">Clear (04)</button>
+          </div>
+        </div>
+        <div id="readiness" class="readiness hidden"></div>
+        <ul id="dtc-list" class="dtc-list">
+          <li class="dtc-empty">Not read yet — connect and press “Read (03)”.</li>
+        </ul>
+        <div id="freeze" class="freeze hidden"></div>
+      </section>
+
+      <!-- Protocol log -->
+      <section class="card log-card">
+        <div class="card-head">
+          <h2>Protocol log</h2>
+          <div class="card-actions">
+            <button id="log-clear" class="btn small ghost">Clear</button>
+          </div>
+        </div>
+        <div id="log" class="log"></div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="footer">
+    ECU OBD2 — Motorcycle ECU tool. OBD-II mode: ELM327 line protocol (SAE J1979) via BLE/USB Serial.
+    Bike mode: Honda K-line (JS port of sirisakboy/eculib) via FTDI @ 10400 baud.
+    Simulator modes need no hardware. Flash/recovery tools for advanced users — reference use only.
+  </footer>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module" src="js/ui/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "ECU OBD2",
+  "description": "Motorcycle ECU diagnostic tool & Honda K-line protocol dashboard with live gauges, DTC code reader, ROM manager, and simulator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
